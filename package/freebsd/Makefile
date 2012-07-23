@@ -11,13 +11,26 @@ PLIB_DIR         = $(BUILD_STAGE_DIR)/lib/riak
 PDATA_DIR        = $(BUILD_STAGE_DIR)/db/riak
 PLOG_DIR         = $(BUILD_STAGE_DIR)/log/riak
 
+TARNAME = $(APP)-$(PKG_VERSION)-$(OSNAME)-$(ARCH).tar
 PKGNAME = $(APP)-$(PKG_VERSION)-$(OSNAME)-$(ARCH).tbz
 
 build: packing_list_files templates
 	@echo "Building package $(PKGNAME)"
 	mkdir -p packages
 	cd $(BUILD_STAGE_DIR) && \
-	tar -cjf ../../packages/$(PKGNAME) *
+	tar -cf $(TARNAME) +CONTENTS +COMMENT +DESC +MTREE_DIRS +DEINSTALL +DISPLAY
+	cd $(BUILD_STAGE_DIR) && \
+	find man -type f | tar -rf $(TARNAME) -T - && \
+	find sbin -type f | tar -rf $(TARNAME) -T - && \
+	find lib -type f | tar -rf $(TARNAME) -T - && \
+	find etc -type f | tar -rf $(TARNAME) -T - && \
+	find db -type f | tar -rf $(TARNAME) -T - && \
+	find log -type f | tar -rf $(TARNAME) -T -
+
+	cd $(BUILD_STAGE_DIR) && \
+	gzip $(TARNAME) && \
+	mv $(TARNAME).gz ../../packages/$(PKGNAME)
+
 	cd packages && \
 		for tarfile in `ls *.tbz`; do \
 		shasum -a 256 $${tarfile} > $${tarfile}.sha \
@@ -28,6 +41,12 @@ build: packing_list_files templates
 # Write initial settings to a local file then copy
 #   to the destination folder where we use 'find'
 #   to populate the files and directories
+# Regarding @owner and @group callouts
+#   They work on files, but not on directories.
+#   Also, the last callout should be blank to revert
+#   back to the default so the /var/db/pkg directory
+#   doesn't get set to something bad (which is a 
+#   horrible bug in pkg_add).
 packing_list_files: $(BUILD_STAGE_DIR)
 	@echo "Adding to packaging list $(APP)-$(PKG_VERSION)"
 	echo "@name $(APP)-$(PKG_VERSION)" >> plist
@@ -54,7 +73,8 @@ packing_list_files: $(BUILD_STAGE_DIR)
 	cd $(BUILD_STAGE_DIR) && \
 	   echo "@cwd /usr/local" >> +CONTENTS && \
 	   echo "@owner riak" >> +CONTENTS && \
-	   echo "@group riak" >> +CONTENTS
+	   echo "@group riak" >> +CONTENTS && \
+	   echo "@mode 0755" >> +CONTENTS
 	cd $(BUILD_STAGE_DIR) && \
 	   find sbin -type f >> +CONTENTS && \
            find sbin -d -type d -exec echo "@dirrm {}" \; >> +CONTENTS
@@ -65,6 +85,7 @@ packing_list_files: $(BUILD_STAGE_DIR)
 	cd $(BUILD_STAGE_DIR) && \
 	   echo "@owner root" >> +CONTENTS && \
 	   echo "@group wheel" >> +CONTENTS && \
+	   echo "@mode 0644" >> +CONTENTS && \
 	   find etc -type f >> +CONTENTS && \
 	   find etc -d -type d -exec echo "@dirrm {}" \; >> +CONTENTS
 
@@ -77,13 +98,18 @@ packing_list_files: $(BUILD_STAGE_DIR)
 	cd $(BUILD_STAGE_DIR) && \
 	   find db -type f >> +CONTENTS && \
            find db -d -type d -exec echo "@dirrm {}" \; >> +CONTENTS && \
-	   echo "@exec chown -R riak:riak /var/db/riak" >> +CONTENTS
+	   echo "@exec chown -R riak:riak /var/db/riak" >> +CONTENTS && \
+	   echo "@exec chmod 700 /var/db/riak" >> +CONTENTS
 	cd $(BUILD_STAGE_DIR) && \
 	   find log -type f >> +CONTENTS && \
            find log -d -type d -exec echo "@dirrm {}" \; >> +CONTENTS && \
-	   echo "@exec chown -R riak:riak /var/log/riak" >> +CONTENTS
+	   echo "@exec chown -R riak:riak /var/log/riak" >> +CONTENTS && \
+	   echo "@exec chmod 700 /var/log/riak" >> +CONTENTS
 
 	cd $(BUILD_STAGE_DIR) && \
+	   echo "@owner" >> +CONTENTS && \
+	   echo "@group" >> +CONTENTS && \
+	   echo "@mode"  >> +CONTENTS && \
 	   echo "@display +DISPLAY" >> +CONTENTS
 
 
@@ -103,7 +129,6 @@ templates: $(BUILD_STAGE_DIR)
 $(BUILD_STAGE_DIR): buildrel
 	@echo "Copying rel directory to staging directory"
 	mkdir -p $@
-	cp -R $(BUILD_RIAK_PATH)/rel/riak $(BUILD_STAGE_DIR)
 	mkdir -p $(PBIN_DIR)
 	cp -R $(BUILD_RIAK_PATH)/rel/riak/bin/* $(PBIN_DIR)
 	mkdir -p $(PETC_DIR)
